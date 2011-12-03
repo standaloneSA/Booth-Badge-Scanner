@@ -1,13 +1,11 @@
 <?php
 
-$dbUser = "username"; 
-$dbPass = "password"; 
-$dbHost = "localhost"; 
+require_once("config.php"); 
 
 print ' 
 <html>
 <head>
-<title>Booth Badge Scanner</title>
+<title>' . $orgName . ' Booth Badge Scanner</title>
 
 <style type="text/css"> 
 div.okmessage
@@ -17,7 +15,7 @@ text-align:center;
 font-weight:bold;
 }
 
-div.errmessage
+div.errmsg
 {
 color:red;
 text-align:center; 
@@ -38,7 +36,7 @@ text-align:center;
 </head>
 <body>
 <div class="banner">
-	Booth Badge Scanner
+	' . $orgName . ' Booth Badge Scanner
 </div>
 
 
@@ -58,7 +56,7 @@ function printForm() {
 	print '
 		<center>
 		<form name="badgeInfo" id="badgeInfo" method="POST" action=""> 
-			<input type="text" name="badgeText" id="badgeText" size=70 value="">
+			<input type="text" name="badgeText" id="badgeText" autocomplete="off" size=70 value="">
 			<br>
 			<input type="submit">
 		</form>
@@ -72,9 +70,13 @@ function storePost($strBadge) {
 		return; 
 	}
 
-	global $dbHost, $dbUser, $dbPass; 
+	global $dbHost, $dbUser, $dbPass, $arrBadgeFields, $dbTable; 
 
 	$arrFields = explode("^", $strBadge); 
+
+	$myDB = mysql_connect($dbHost, $dbUser, $dbPass) or 
+		die ("Error connecting to Database. Please make sure it's started. Error: " . mysql_error() ); 
+
 
 	for ( $element = 0; $element < count($arrFields); $element++ ) { 
 		if ( $arrFields[$element] == "NULL" ) { 
@@ -83,37 +85,39 @@ function storePost($strBadge) {
 		}
 	}
 
-	$myDB = mysql_connect($dbHost, $dbUser, $dbPass) or 
-		die ("Error connecting to Database. Please make sure it's started. Error: " . mysql_error() ); 
 	
-	$query = "INSERT INTO lopsaBadges.badges ( 
-				rawText, badgeID, fName, 
-				lName, email, company, 
-				address1, address2, address3, 
-				city, state, zipcode, 
-				country, phone
-				) VALUES ( 
-				'" . mysql_real_escape_string($strBadge) . "', 
-				'" . mysql_real_escape_string($arrFields[0]) . "',
-				'" . mysql_real_escape_string($arrFields[1]) . "',
-				'" . mysql_real_escape_string($arrFields[2]) . "',
-				'" . mysql_real_escape_string($arrFields[3]) . "',
-				'" . mysql_real_escape_string($arrFields[4]) . "',
-				'" . mysql_real_escape_string($arrFields[5]) . "',
-				'" . mysql_real_escape_string($arrFields[6]) . "',
-				'" . mysql_real_escape_string($arrFields[7]) . "',
-				'" . mysql_real_escape_string($arrFields[8]) . "',
-				'" . mysql_real_escape_string($arrFields[9]) . "',
-				'" . mysql_real_escape_string($arrFields[10]) . "',
-				'" . mysql_real_escape_string($arrFields[11]) . "',
-				'" . mysql_real_escape_string($arrFields[12]) . "'
-				)"; 
+	$query = "INSERT INTO " . $dbTable . ".badges (";
+	foreach ( $arrBadgeFields as $curField ) { 
+		$query .= " $curField,"; 
+	} 
+	$query = rtrim($query,","); 
 
-		mysql_query($query, $myDB) or
-			die("Error: Unable to submit data: " . mysql_error() ); 
+	$query .= ") VALUES (";
+
+	// First column we insert is always the entire badge contents, so we can
+	// recover data if something goes south
+	$query .= "'" . mysql_real_escape_string($strBadge) . "',"; 
+	foreach ( $arrFields as $curField ) { 
+		$query .= "'" . mysql_real_escape_string($curField) . "',"; 
+	}
+	$query = rtrim($query,","); 
+	$query .= ")"; 
+
+
+	// If the number of columns we SHOULD have doesn't match the 
+	// number of columns we DO have, then we will just store 
+	// the raw contents of the badge and print an error message
+	if ( count($arrFields) != count($arrBadgeFields) ) { 
+		print "<div class='errmsg'>Error: Number of scanned fields does not match database.<br>Inserting only the raw scanned code</div>"; 
+		$query = "INSERT INTO " . $dbTable . ".badges (" . $arrBadgeFields[0] . ") VALUES ('" . mysql_real_escape_string($strBadge) . "')"; 
+	}
+	mysql_query($query, $myDB) or
+		die("Error: Unable to submit data: " . mysql_error() ); 
 
 	if ( mysql_insert_id($myDB) ) { 
 		print "<div class='okmessage'>OK</div>"; 
+	} else { 
+		print "<div class='errmsg'>DB Error: Failed somehow at insterting data, but didn't received a MySQL error.<br>Please check logs</div>"; 
 	}
 
 	mysql_close($myDB); 
